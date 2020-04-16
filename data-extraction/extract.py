@@ -67,7 +67,10 @@ def get_from_index(url: str) -> List[PageResult]:
     text = get_page(url)
     soup = BeautifulSoup(text, 'html.parser')
     list_items = soup.select(".mw-category-group .CategoryTreeItem > a")
-    next_url = soup.find('a', title="Category:Musicians by band").get('href')
+    try:
+        next_url = soup.find('a', title="Category:Musicians by band", text=re.compile('next page')).get('href')
+    except AttributeError:
+        next_url = None
     result = PageResult(bands=list(pool.map(create_band, list_items)), next_url=next_url)
     if next_url is not None:
         return [result] + get_from_index(next_url)
@@ -82,7 +85,14 @@ def get_first() -> List[PageResult]:
 def get_band_member(url: str) -> BandMember:
     text = get_page(url)
     soup = BeautifulSoup(text, 'html.parser')
-    name = soup.select(".mw-parser-output p b")[0].text
+    try:
+        name = soup.select(".mw-parser-output p b")[0].text
+    except IndexError:
+        try:
+            name = soup.select("#firstHeading")[0].text
+        except IndexError:
+            print(f"No name found on {url}")
+            name = url
     return BandMember(name=name, url=url)
 
 
@@ -94,11 +104,13 @@ def get_band_members(url: str) -> List[BandMember]:
     all_subcategories = soup.select("#mw-pages .mw-category-group")
 
     if len(all_subcategories) > 0:
-        list_items = itertools.chain(*[c.select('a') for c in all_subcategories if string.ascii_letters.find(c.find_next('h3').text) > -1])
+        list_items = itertools.chain(
+            *[c.select('a') for c in all_subcategories if string.ascii_letters.find(c.find_next('h3').text) > -1])
     else:
         list_items = soup.select("#mw-pages .mw-content-ltr a")
 
-    return [get_band_member(anchor.get('href')) for anchor in list_items]
+    return [get_band_member(anchor.get('href')) for anchor in list_items
+            if not anchor.text[:7] == "List of" and not anchor.text == "Cuban Link discography"]
 
 
 if __name__ == "__main__":
