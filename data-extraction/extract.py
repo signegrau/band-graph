@@ -1,3 +1,4 @@
+import csv
 import itertools
 import os
 import re
@@ -13,6 +14,7 @@ import string
 
 @dataclass
 class BandMember:
+    page_name: str
     name: str
     url: str
 
@@ -41,6 +43,7 @@ def get_page(url: str) -> str:
         with open(path, 'r') as f:
             text = f.read()
     else:
+        print(f"Fetching {url}")
         r = requests.get(full_url)
         text = r.text
         with open(path, 'w') as f:
@@ -85,15 +88,20 @@ def get_first() -> List[PageResult]:
 def get_band_member(url: str) -> BandMember:
     text = get_page(url)
     soup = BeautifulSoup(text, 'html.parser')
+
+    try:
+        title = soup.select("#firstHeading")[0].text
+    except IndexError:
+        print(f"No title found on {url}")
+        title = url
+
     try:
         name = soup.select(".mw-parser-output p b")[0].text
     except IndexError:
-        try:
-            name = soup.select("#firstHeading")[0].text
-        except IndexError:
-            print(f"No name found on {url}")
-            name = url
-    return BandMember(name=name, url=url)
+        print(f"No name found on {url}")
+        name = title
+
+    return BandMember(page_name=title, name=name, url=url)
 
 
 def get_band_members(url: str) -> List[BandMember]:
@@ -115,8 +123,10 @@ def get_band_members(url: str) -> List[BandMember]:
 
 if __name__ == "__main__":
     bands = itertools.chain(*[page.bands for page in get_first()])
-    for band in bands:
-        print(band.name)
-        for member in band.members:
-            print(f"{member.name}, ", end='')
-        print()
+
+    with open("bands2.csv", "w") as csvfile:
+        writer = csv.writer(csvfile, delimiter=";")
+
+        for band in bands:
+            row = [f"{band.page_name},{band.name}"] + [f"{member.page_name},{member.name}" for member in band.members]
+            writer.writerow(row)
