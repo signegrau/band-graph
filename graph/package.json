@@ -5,13 +5,18 @@
   "license": "MIT",
   "dependencies": {
     "csv-parse": "^4.8.8",
-    "d3": "^5.15.1"
+    "d3": "^5.15.1",
+    "d3-zoom": "^1.8.3"
   },
   "devDependencies": {
+    "@types/d3-zoom": "^1.7.4",
     "ts-loader": "^7.0.0",
     "typescript": "^3.8.3",
     "webpack": "^4.42.1",
     "webpack-cli": "^3.3.11",
     "webpack-dev-server": "^3.10.3"
+  },
+  "scripts": {
+    "dev": "webpack-dev-server -d"
   }
 }
