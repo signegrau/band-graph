@@ -28,7 +28,7 @@ const getData = async (): Promise<Data> => {
     return await new Promise((resolve, reject) => parse(text, {
         delimiter: ';',
         relax_column_count: true,
-        to: 200,
+        to: 600,
     }).on('readable', function () {
         let record: ReadonlyArray<string>;
         while (record = this.read()) {
@@ -109,13 +109,14 @@ const makeChart = (data: Data) => {
     const links: ReadonlyArray<Edge> = data.edges.map(d => Object.create(d));
     const nodes: ReadonlyArray<Node> = data.nodes.map(d => Object.create(d));
 
+    const height = 4800;
+    const width = 6400;
+
     const simulation = d3.forceSimulation(nodes)
         .force("link", d3.forceLink(links).id(d => d.id))
         .force("charge", d3.forceManyBody())
-        .force('collision', d3.forceCollide().radius(d => 2));
+        .force('collision', d3.forceCollide().radius(d => 0.5));
 
-    const height = 4800;
-    const width = 6400;
 
     const svg = d3.create("svg")
         .attr("viewBox", [-width / 2, -height/2, width, height]);
@@ -135,8 +136,7 @@ const makeChart = (data: Data) => {
         .data(nodes)
         .join("circle")
         .attr("r", 5)
-        .attr("fill", d => "black")
-        .call(drag(simulation));
+        .attr("fill", d => "black");
 
 
     svg.call(d3Zoom.zoom().on("zoom", () => {
