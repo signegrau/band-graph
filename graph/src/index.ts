@@ -121,7 +121,10 @@ const makeChart = (data: Data) => {
     const svg = d3.create("svg")
         .attr("viewBox", [-width / 2, -height/2, width, height]);
 
-    const link = svg.append("g")
+    const root = svg.append("g")
+        .attr("class", "everything");
+
+    const link = root.append("g")
         .attr("stroke", "#f00")
         .attr("stroke-opacity", 0.8)
         .selectAll("line")
@@ -129,7 +132,7 @@ const makeChart = (data: Data) => {
         .join("line")
         .attr("stroke-width", d => Math.sqrt(Math.pow(d.bands.length, 2)));
 
-    const node = svg.append("g")
+    const node = root.append("g")
         .attr("stroke", "#fff")
         .attr("stroke-width", 1.0)
         .selectAll("circle")
@@ -138,10 +141,11 @@ const makeChart = (data: Data) => {
         .attr("r", 5)
         .attr("fill", d => "black");
 
+    const zoomHandler = d3Zoom.zoom().on("zoom", () => {
+        root.attr("transform", d3.event.transform);
+    });
 
-    svg.call(d3Zoom.zoom().on("zoom", () => {
-        svg.attr("transform", d3.event.transform)
-    }));
+    zoomHandler(svg);
 
     node.append("title")
         .text(d => d.id);
