@@ -5,12 +5,13 @@ import parse = require("csv-parse");
 interface Node {
     id: string;
     name: string;
+    group: string;
 }
 
 interface Edge {
     source: string;
     target: string;
-    bands: string[];
+    value: number;
 }
 
 interface Data {
@@ -24,20 +25,49 @@ const getData = async (): Promise<Data> => {
 
     const bandMembers: Map<string, Node> = new Map();
     const bandMembersEdges: Map<string, Map<string, Edge>> = new Map();
+    const artistBands: Map<string, Array<string>> = new Map();
 
-    return await new Promise((resolve, reject) => parse(text, {
+    return await new Promise((resolve) => parse(text, {
         delimiter: ';',
         relax_column_count: true,
-        to: 600,
+        to: 100,
     }).on('readable', function () {
         let record: ReadonlyArray<string>;
         while (record = this.read()) {
             const band = record[0].split(',')[1];
             const members: ReadonlyArray<Node> = record.slice(1).map((s) => {
                 const split = s.split(',');
+                const artist = split[0];
+                const id = `${artist}|${band}`;
+
+                let bands = artistBands.get(artist);
+
+                if (!bands) {
+                    bands = [band];
+                    artistBands.set(artist, bands);
+                } else {
+                    bands.push(band);
+                }
+
+                let bandMemberMap = bandMembersEdges.get(id);
+                if (!bandMemberMap) {
+                    bandMemberMap = new Map<string, Edge>();
+                    bandMembersEdges.set(id, bandMemberMap);
+                }
+
+                bands.filter(b => b !== band).forEach(otherBand => {
+                    const otherId = `${artist}|${otherBand}`;
+                    bandMemberMap.set(otherId, {
+                        source: id,
+                        target: otherId,
+                        value: 1,
+                    });
+                })
+
                 return {
-                    id: split[0],
-                    name: split[1]
+                    id: id,
+                    name: split[1],
+                    group: band,
                 };
             });
 
@@ -53,17 +83,11 @@ const getData = async (): Promise<Data> => {
                         bandMembersEdges.set(sorted[0], bandMemberMap);
                     }
 
-                    const existing = bandMemberMap.get(sorted[1]);
-
-                    if (existing) {
-                        existing.bands.push(band);
-                    } else {
-                        bandMemberMap.set(sorted[1], {
-                            source: member.id,
-                            target: m.id,
-                            bands: [band]
-                        });
-                    }
+                    bandMemberMap.set(sorted[1], {
+                        source: member.id,
+                        target: m.id,
+                        value: 1,
+                    });
                 });
             }
 
@@ -115,11 +139,11 @@ const makeChart = (data: Data) => {
     const simulation = d3.forceSimulation(nodes)
         .force("link", d3.forceLink(links).id(d => d.id))
         .force("charge", d3.forceManyBody())
-        .force('collision', d3.forceCollide().radius(d => 0.5));
+        .force('collision', d3.forceCollide().radius(0.5));
 
 
     const svg = d3.create("svg")
-        .attr("viewBox", [-width / 2, -height/2, width, height]);
+        .attr("viewBox", [-width / 2, -height / 2, width, height]);
 
     const root = svg.append("g")
         .attr("class", "everything");
@@ -130,7 +154,7 @@ const makeChart = (data: Data) => {
         .selectAll("line")
         .data(links)
         .join("line")
-        .attr("stroke-width", d => Math.sqrt(Math.pow(d.bands.length, 2)));
+        .attr("stroke-width", d => Math.sqrt(Math.pow(d.value, 2)));
 
     const node = root.append("g")
         .attr("stroke", "#fff")
@@ -139,7 +163,8 @@ const makeChart = (data: Data) => {
         .data(nodes)
         .join("circle")
         .attr("r", 5)
-        .attr("fill", d => "black");
+        .attr("fill", "black")
+        .call(drag(simulation));
 
     const zoomHandler = d3Zoom.zoom().on("zoom", () => {
         root.attr("transform", d3.event.transform);
