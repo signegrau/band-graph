@@ -35,7 +35,7 @@ const getData = async (): Promise<Data> => {
     return await new Promise((resolve) => parse(text, {
         delimiter: ';',
         relax_column_count: true,
-        to_line: 100
+        to_line: 1000
     }).on('readable', function () {
         let record: ReadonlyArray<string>;
         while (record = this.read()) {
@@ -140,7 +140,6 @@ const network = (prev, index: (n: string) => string, expand: string | undefined)
         let i = index(n.id);
 
         if (gm[i] == undefined) {
-            console.log(gn[i]);
             gm[i] = gn[i] || {id: i, name: i, group: i, size: 0, nodes: []};
         }
 
@@ -152,8 +151,8 @@ const network = (prev, index: (n: string) => string, expand: string | undefined)
             nodes.push(n);
             if (gn[i]) {
                 // place new nodes at cluster location (plus jitter)
-                n.x = gn[i].x + Math.random();
-                n.y = gn[i].y + Math.random();
+                n.x = gn[i].x;
+                n.y = gn[i].y;
             }
         } else {
             // the node is part of a collapsed cluster
@@ -258,8 +257,8 @@ const drag = simulation => {
         .on("end", dragended);
 }
 
-let data, svg, root, net, simulation, link, node, hull, zoomHandler;
-let height = 4800;
+let data: Data, svg, root, net, simulation, simulationInner, link, node, hull, zoomHandler, dragHandler;
+let height = 6400;
 let width = 6400;
 
 const init = (initData: Data) => {
@@ -271,6 +270,22 @@ const init = (initData: Data) => {
     root = svg.append("g")
         .attr("class", "everything");
 
+    dragHandler = d3.drag()
+        .on("start", d => {
+            if (!d3.event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        })
+        .on("drag", d => {
+            d.fx = d3.event.x;
+            d.fy = d3.event.y;
+        })
+        .on("end", d => {
+            if (!d3.event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+        });
+
     zoomHandler = d3Zoom.zoom().on("zoom", () => {
         root.attr("transform", d3.event.transform);
     });
@@ -280,27 +295,35 @@ const init = (initData: Data) => {
     makeChart(undefined);
 }
 
-const getIndex = (n: string) => n.split('|')[1] || n;
+const getBand = (n: string) => n.split('|')[1] || n;
+const getName = (n: string) => n.split('|')[0] || undefined;
+
+const size = (d) => d.group_data?.size || d.size;
 
 const makeChart = (expand: string | undefined) => {
     if (simulation) simulation.stop();
+    if (simulationInner) simulationInner.stop();
 
-    const height = 4800;
-    const width = 6400;
-
-    console.log(net);
-    net = network(net, getIndex, expand);
-    console.log(net);
+    net = network(net, getBand, expand);
 
     simulation = d3.forceSimulation(net.nodes)
-        .force("link", d3.forceLink(net.links).id(d => d.id))
-        .force("charge", d3.forceManyBody())
-        .force('collision', d3.forceCollide().radius(d => d.nodes ? d.nodes.length : 1))
-        .force('center', d3.forceCenter(width / 2, height / 2));
+        .force("link", d3.forceLink(net.links).id(d => d.id).distance(link =>
+            link.internal ? 10 : 10
+        ).strength((link) =>
+            link.source.nodes === undefined || link.target.nodes === undefined ?
+                (link.internal ? 0.01 : 0.5)
+                : 1 / Math.min(size(link.source), size(link.target))
+        ))
+        .force("charge", d3.forceManyBody().strength(d => -30)
+            .theta(80))
+        .force('collision', d3.forceCollide().radius(d => 2 + (d.nodes ? Math.log(d.nodes.length) * 3 : 1)))
+        .force('center', d3.forceCenter(width / 2, height / 2))
+        .force('x', d3.forceX(width / 2).strength(d => size(d) * 0.01))
+        .force('y', d3.forceY(height / 2).strength(d => size(d) * 0.01));
 
     if (hull) hull.remove();
     hull = root.append("g")
-        .data(convexHulls(net.nodes, getIndex, 4))
+        .data(convexHulls(net.nodes, getBand, 4))
         .append("path")
         .attr("class", "hull")
         .attr("d", drawCluster)
@@ -313,12 +336,12 @@ const makeChart = (expand: string | undefined) => {
 
     if (link) link.remove();
     link = root.append("g")
-        .attr("stroke", "#f00")
         .selectAll("line")
         .data(net.links)
         .join("line")
-        .attr("stroke-opacity", d => d.internal ? 0 : 0.8)
-        .attr("stroke-width", d => d.internal ? 0 : Math.sqrt(Math.pow(d.size, 2)));
+        .attr("stroke", d => d.internal ? "#00f" : "#f00")
+        .attr("stroke-opacity", d => d.internal ? 0.0 : 0.8)
+        .attr("stroke-width", d => d.internal ? 0.0 : Math.sqrt(Math.pow(d.size, 2)));
 
     if (node) node.remove();
     node = root.append("g")
@@ -327,20 +350,65 @@ const makeChart = (expand: string | undefined) => {
         .selectAll("circle")
         .data(net.nodes)
         .join("circle")
-        .attr("r", d => d.nodes ? d.nodes.length : 2)
-        .attr("fill", "black")
-        .call(drag(simulation))
+        .attr("r", d => d.nodes ? Math.log(d.nodes.length) * 3 : 1)
+        .attr("fill", d => d.nodes ? "black" : "purple")
         .on("click", function (d) {
             console.log("node click", d, arguments, this, expand);
-            makeChart(d.group);
+            if (d.nodes) {
+                makeChart(d.group);
+            } else {
+                const artist = {
+                    name: d.name,
+                    bands: [{
+                        name: d.group,
+                        members: d.group_data.nodes.filter(e => e.id !== d.id).map(e => e.name),
+                    }].concat(data.edges
+                        .filter(e => getBand(e.source) !== getBand(e.target) && (e.source === d.id || e.target === d.id))
+                        .map(e => {
+                            const other = e.source === d.id ? e.target : e.source;
+                            return data.nodes.filter(n => n.id === other)[0].group;
+                        })
+                        .map(b => ({
+                            name: b,
+                            members: data.nodes.filter(n => n.group === b && getName(n.id) !== getName(d.id))
+                                .map(n => n.name)
+                        })))
+                }
+
+                const box = document.getElementById("box");
+                const boxContents = document.getElementById("box-contents");
+                box.style.display = "";
+                boxContents.innerHTML = "";
+
+                const title = document.getElementById('box-title');
+                title.innerHTML = artist.name.trim();
+
+                artist.bands.forEach(band => {
+                    const subtitle = document.createElement('span');
+                    subtitle.className = "box-subtitle";
+                    subtitle.innerHTML = band.name.trim();
+
+                    boxContents.append(subtitle);
+
+                    band.members.forEach(member => {
+                        const item = document.createElement('span');
+                        item.className = "box-item";
+                        item.innerHTML = member.trim();
+
+                        boxContents.append(item);
+                    })
+                })
+            }
         });
+
+    //dragHandler(node);
 
     node.append("title")
         .text(d => d.id);
 
     simulation.on("tick", () => {
         if (!hull.empty()) {
-            hull.data(convexHulls(net.nodes, getIndex, 4))
+            hull.data(convexHulls(net.nodes, getBand, 4))
                 .attr("d", drawCluster);
         }
 
@@ -351,8 +419,8 @@ const makeChart = (expand: string | undefined) => {
             .attr("y2", d => d.target.y);
 
         node
-            .attr("cx", d => d.x)
-            .attr("cy", d => d.y);
+            .attr("cx", d => d.x = Math.max(0, Math.min(d.x, width)))
+            .attr("cy", d => d.y = Math.max(0, Math.min(d.y, height)));
     });
 }
 
