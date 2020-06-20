@@ -278,7 +278,11 @@ const nodeFill = d => d.nodes ? "#000000" : "#673AB7"
 
 const search = d3.select("#search").on("input", function () {
     const value = d3.event.target.value;
-    node.attr('fill', nodeFill).filter(function (d) {
+    node.attr('fill', nodeFill);
+
+    if (value.length === 0) return;
+
+    node.filter(function (d) {
         return d.id.toLowerCase().includes(value.toLowerCase())
     }).attr('fill', 'red');
     console.log(d3.event.target.value);
