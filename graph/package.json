@@ -19,6 +19,7 @@
     "webpack-dev-server": "^3.10.3"
   },
   "scripts": {
-    "dev": "webpack-dev-server -d"
+    "dev": "webpack-dev-server -d",
+    "bundle":  "webpack -p"
   }
 }

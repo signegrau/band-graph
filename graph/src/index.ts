@@ -9,6 +9,8 @@ interface Node {
     group: string;
     x?: number;
     y?: number;
+    rx?: number;
+    ry?: number;
     size?: number;
     group_data?: string;
 }
@@ -35,7 +37,7 @@ const getData = async (): Promise<Data> => {
     return await new Promise((resolve) => parse(text, {
         delimiter: ';',
         relax_column_count: true,
-        to_line: 1000
+        //to_line: 1000
     }).on('readable', function () {
         let record: ReadonlyArray<string>;
         while (record = this.read()) {
@@ -171,6 +173,11 @@ const network = (prev, index: (n: string) => string, expand: string | undefined)
         // always count group size as we also use it to tweak the force graph strengths/distances
         l.size += 1;
         n.group_data = l;
+
+        if (n.rx === undefined || n.ry === undefined) {
+            n.rx = Math.random();
+            n.ry = Math.random();
+        }
     }
 
     for (const i in gm) {
@@ -257,9 +264,25 @@ const drag = simulation => {
         .on("end", dragended);
 }
 
-let data: Data, svg, root, net, simulation, simulationInner, link, node, hull, zoomHandler, dragHandler;
+const tooltip = d3.select("body").append("div")
+    .attr("class", "tooltip")
+    .style("opacity", 0);
+
+let data: Data, svg, root, net, simulation, simulationInner, linkBands, link, node, hull, zoomHandler, dragHandler,
+    selected, selectedd;
 let height = 6400;
 let width = 6400;
+
+const nodeRadius = d => d.nodes ? Math.log(d.nodes.length) * 3 : (d.id === selected ? 5 : 3)
+const nodeFill = d => d.nodes ? "#000000" : "#673AB7"
+
+const search = d3.select("#search").on("input", function () {
+    const value = d3.event.target.value;
+    node.attr('fill', nodeFill).filter(function (d) {
+        return d.id.toLowerCase().includes(value.toLowerCase())
+    }).attr('fill', 'red');
+    console.log(d3.event.target.value);
+})
 
 const init = (initData: Data) => {
     data = initData;
@@ -282,8 +305,11 @@ const init = (initData: Data) => {
         })
         .on("end", d => {
             if (!d3.event.active) simulation.alphaTarget(0);
-            d.fx = null;
-            d.fy = null;
+
+            if (d.group_data === undefined) {
+                d.fx = null;
+                d.fy = null;
+            }
         });
 
     zoomHandler = d3Zoom.zoom().on("zoom", () => {
@@ -300,26 +326,52 @@ const getName = (n: string) => n.split('|')[0] || undefined;
 
 const size = (d) => d.group_data?.size || d.size;
 
+const noise = (value: number, radius: number, rand?: number) => (value - (radius / 2)) + ((rand ?? Math.random()) * radius)
+
+const group_radius = (d) => size(d) * 2
+const group_area = (d, i: 'x' | 'y') => [d.group_data[i] - (group_radius(d) / 2), d.group_data[i] + (group_radius(d) / 2)]
+
 const makeChart = (expand: string | undefined) => {
     if (simulation) simulation.stop();
     if (simulationInner) simulationInner.stop();
 
     net = network(net, getBand, expand);
 
+    net.nodes = net.nodes.map(d => {
+        if (d.group_data) {
+            const i = d.index - d.group_data.index;
+            d.fx = noise(d.group_data.x, group_radius(d), d.rx);
+            d.fy = noise(d.group_data.y, group_radius(d), d.ry);
+        }
+
+        return d;
+    });
+
     simulation = d3.forceSimulation(net.nodes)
         .force("link", d3.forceLink(net.links).id(d => d.id).distance(link =>
-            link.internal ? 10 : 10
+            30
         ).strength((link) =>
-            link.source.nodes === undefined || link.target.nodes === undefined ?
-                (link.internal ? 0.01 : 0.5)
-                : 1 / Math.min(size(link.source), size(link.target))
+            1 / Math.min(size(link.source), size(link.target))
         ))
         .force("charge", d3.forceManyBody().strength(d => -30)
-            .theta(80))
-        .force('collision', d3.forceCollide().radius(d => 2 + (d.nodes ? Math.log(d.nodes.length) * 3 : 1)))
+            .theta(10).distanceMax(2000))
+        .force('collision', d3.forceCollide().radius(d => 2 + (d.nodes ? Math.log(d.nodes.length) * 3 : 8)))
         .force('center', d3.forceCenter(width / 2, height / 2))
-        .force('x', d3.forceX(width / 2).strength(d => size(d) * 0.01))
-        .force('y', d3.forceY(height / 2).strength(d => size(d) * 0.01));
+        .force('x', d3.forceX(width / 2).strength(d => size(d) * 0.007))
+        .force('y', d3.forceY(height / 2).strength(d => size(d) * 0.007));
+
+    const linkStroke = d => d.source.group_data || d.target.group_data ? "#43A047" : "#B0BEC5";
+    const linkOpacity = d => d.internal ? 0.0 : 1;
+    const linkWidth = d => d.internal ? 0.0 : Math.sqrt(Math.pow(d.size, 2));
+
+    if (linkBands) linkBands.remove();
+    linkBands = root.append("g")
+        .selectAll("line")
+        .data(net.links.filter(d => d.source.nodes !== undefined && d.target.nodes !== undefined))
+        .join("line")
+        .attr("stroke", linkStroke)
+        .attr("stroke-opacity", linkOpacity)
+        .attr("stroke-width", linkWidth);
 
     if (hull) hull.remove();
     hull = root.append("g")
@@ -327,21 +379,31 @@ const makeChart = (expand: string | undefined) => {
         .append("path")
         .attr("class", "hull")
         .attr("d", drawCluster)
-        .style("fill", d => "#ff0")
+        .style("fill", d => "#03A9F4")
         .style("opacity", d => 0.4)
         .on("click", function (d) {
             console.log("hull click", d, arguments, this, expand[d.group]);
+
+            if (selected) {
+                d3.select(selected).attr("r", nodeRadius);
+                d3.select(selected).attr("fill", nodeFill);
+
+                const box = document.getElementById("box");
+                box.style.display = "none";
+                selected = undefined;
+            }
+
             makeChart(undefined);
         });
 
     if (link) link.remove();
     link = root.append("g")
         .selectAll("line")
-        .data(net.links)
+        .data(net.links.filter(d => d.source.nodes === undefined || d.target.nodes === undefined))
         .join("line")
-        .attr("stroke", d => d.internal ? "#00f" : "#f00")
-        .attr("stroke-opacity", d => d.internal ? 0.0 : 0.8)
-        .attr("stroke-width", d => d.internal ? 0.0 : Math.sqrt(Math.pow(d.size, 2)));
+        .attr("stroke", linkStroke)
+        .attr("stroke-opacity", linkOpacity)
+        .attr("stroke-width", linkWidth);
 
     if (node) node.remove();
     node = root.append("g")
@@ -350,13 +412,35 @@ const makeChart = (expand: string | undefined) => {
         .selectAll("circle")
         .data(net.nodes)
         .join("circle")
-        .attr("r", d => d.nodes ? Math.log(d.nodes.length) * 3 : 1)
-        .attr("fill", d => d.nodes ? "black" : "purple")
+        .attr("r", nodeRadius)
+        .attr("fill", nodeFill)
         .on("click", function (d) {
             console.log("node click", d, arguments, this, expand);
             if (d.nodes) {
                 makeChart(d.group);
             } else {
+                if (selected) {
+                    d3.select(selected).attr("r", nodeRadius);
+                    d3.select(selected).attr("fill", nodeFill);
+
+                    link.each(function (l) {
+                        if ((l.source === selectedd || l.target === selectedd) && l.source.group !== l.target.group) {
+                            d3.select(this).attr('stroke', linkStroke)
+                        }
+                    });
+                }
+
+                selected = this;
+                selectedd = d;
+                d3.select(this).attr('fill', "#FF9800");
+                d3.select(this).attr('r', 5);
+
+                link.each(function (l) {
+                    if ((l.source === d || l.target === d) && l.source.group !== l.target.group) {
+                        d3.select(this).attr('stroke', "#FF4081")
+                    }
+                });
+
                 const artist = {
                     name: d.name,
                     bands: [{
@@ -384,24 +468,37 @@ const makeChart = (expand: string | undefined) => {
                 title.innerHTML = artist.name.trim();
 
                 artist.bands.forEach(band => {
+                    const div = document.createElement('div');
+
                     const subtitle = document.createElement('span');
                     subtitle.className = "box-subtitle";
                     subtitle.innerHTML = band.name.trim();
 
-                    boxContents.append(subtitle);
+                    div.append(subtitle);
 
                     band.members.forEach(member => {
                         const item = document.createElement('span');
                         item.className = "box-item";
                         item.innerHTML = member.trim();
 
-                        boxContents.append(item);
+                        div.append(item);
                     })
+
+                    boxContents.append(div);
                 })
             }
+        })
+        .on("mouseover", function (d) {
+            tooltip.html(d.name)
+                .style("opacity", 1)
+                .style("left", `${d3.event.pageX}px`)
+                .style("top", `${d3.event.pageY}px`)
+        })
+        .on("mouseout", function (d) {
+            tooltip.style("opacity", 0);
         });
 
-    //dragHandler(node);
+    dragHandler(node);
 
     node.append("title")
         .text(d => d.id);
@@ -411,6 +508,12 @@ const makeChart = (expand: string | undefined) => {
             hull.data(convexHulls(net.nodes, getBand, 4))
                 .attr("d", drawCluster);
         }
+
+        linkBands
+            .attr("x1", d => d.source.x)
+            .attr("y1", d => d.source.y)
+            .attr("x2", d => d.target.x)
+            .attr("y2", d => d.target.y);
 
         link
             .attr("x1", d => d.source.x)

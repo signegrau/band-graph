@@ -2,57 +2,86 @@
 
 <html lang="en">
 <head>
-    <meta charset="utf-8">
+  <meta charset="utf-8">
 
-    <title>Band graph</title>
-    <meta name="description" content="Graph of bands">
+  <title>Band graph</title>
+  <meta name="description" content="Graph of bands">
 
-    <style>
-        body {
-            font-family: sans-serif;
-        }
+  <style>
+    body {
+      font-family: sans-serif;
+      overflow: hidden;
+    }
 
-        #box span {
-            display: block;
-        }
+    #box span {
+      display: block;
+    }
 
-        #box {
-            position: absolute;
-            bottom: 16px;
-            right:16px;
-            width: 300px;
-            height: 500px;
-            background-color: white;
-            border: solid 3px gray;
-            border-radius: 8px;
-            padding: 8px;
-        }
+    #box {
+      position: absolute;
+      bottom: 16px;
+      right: 16px;
+      width: 300px;
+      height: 500px;
+      background-color: white;
+      border: solid 3px gray;
+      border-radius: 8px;
+      padding: 8px;
+    }
 
-        #box-title {
-            font-size: 24px;
-        }
+    #box-title {
+      font-size: 24px;
+    }
 
-        .box-subtitle {
-            font-size: 18px;
-            font-weight: bold;
-            margin-top: 2px;
-        }
+    .box-subtitle {
+      font-size: 18px;
+      font-weight: bold;
+      padding-top: 4px;
+      position: sticky;
+      position: -webkit-sticky;
+      top: 0;
+      background-color: #ffffff;
+    }
 
-        .box-item {
-            font-size: 14px;
-        }
+    .box-item {
+      font-size: 14px;
+    }
 
-        .box-contents {
-            overflow-y: scroll;
-        }
-    </style>
+    #box-contents {
+      overflow: hidden scroll;
+      height: 475px;
+    }
+
+    .tooltip {
+      position: absolute;
+      text-align: left;
+      width: 200px;
+      height: 40px;
+      padding: 2px;
+      font: 16px sans-serif;
+      background: white;
+      border: 0;
+      border-radius: 8px;
+      pointer-events: none;
+      font-weight: bold;
+    }
+
+    #search {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      width: 200px;
+      font-size: 16px;
+    }
+  </style>
 </head>
 
 <body>
 <div id="test"></div>
+<input type="text" id="search" placeholder="Search" value="">
 <div id="box" style="display: none;">
-    <span id="box-title">Ingen valgt 😢</span>
-    <div id="box-contents"></div>
+  <span id="box-title">Ingen valgt 😢</span>
+  <div id="box-contents"></div>
 </div>
 <script src="dist/bundle.js"></script>
 </body>
