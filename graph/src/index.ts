@@ -128,7 +128,7 @@ const network = (prev, index: (n: string) => string, expand: string | undefined)
                 gn[i] = n;
                 n.size = 0;
             } else {
-                o = gc[i] || (gc[i] = {x: width/2, y: height/2, count: 0});
+                o = gc[i] || (gc[i] = {x: width / 2, y: height / 2, count: 0});
                 o.x += n.x;
                 o.y += n.y;
                 o.count += 1;
@@ -275,7 +275,7 @@ let width = 6400;
 let relevant = [];
 
 const nodeRadius = d => d.nodes ? Math.log(d.nodes.length) * 3 : (d.id === selected ? 5 : 3)
-const nodeFill = d => d.nodes ? (relevant.indexOf(d) !== -1 ? "#2E7D32" : "#000000") : "#673AB7"
+const nodeFill = d => d.nodes ? (relevant.indexOf(d.id) !== -1 ? "#2E7D32" : "#000000") : "#673AB7"
 
 const search = d3.select("#search").on("input", function () {
     const value = d3.event.target.value;
@@ -292,7 +292,10 @@ const init = (initData: Data) => {
     data = initData;
 
     svg = d3.create("svg")
-        .attr("viewBox", [0, 0, width, height]);
+        .attr("viewBox", [0, 0, width, height])
+        .on("click", function (d) {
+            tooltip.style("opacity", 0);
+        });
 
     root = svg.append("g")
         .attr("class", "everything");
@@ -337,6 +340,12 @@ const group_radius = (d) => size(d) * 2
 const group_area = (d, i: 'x' | 'y') => [d.group_data[i] - (group_radius(d) / 2), d.group_data[i] + (group_radius(d) / 2)]
 
 const makeChart = (expand: string | undefined) => {
+    if (expand) {
+        d3.select("#header").html(expand);
+    } else {
+        d3.select("#header").html("");
+    }
+
     if (simulation) simulation.stop();
     if (simulationInner) simulationInner.stop();
 
@@ -389,6 +398,7 @@ const makeChart = (expand: string | undefined) => {
         .on("click", function (d) {
             console.log("hull click", d, arguments, this, expand[d.group]);
 
+            relevant = [];
             if (selected) {
                 d3.select(selected).attr("r", nodeRadius);
                 d3.select(selected).attr("fill", nodeFill);
@@ -425,7 +435,14 @@ const makeChart = (expand: string | undefined) => {
                 relevant = [];
                 relevant.push(d);
                 linkBands.filter(l => (l.source === d || l.target === d) && l.source.group !== l.target.group)
-                    .each(l => relevant.push(l.source === d ? l.target : l.source))
+                    .each(l => relevant.push(l.source === d ? l.target.id : l.source.id))
+
+                if (expand) {
+                    if (!link.filter(l => l.source === d || l.target === d).empty()) {
+                        relevant.push(expand);
+                    }
+                }
+
                 makeChart(d.group);
             } else {
                 if (selected) {
@@ -499,8 +516,8 @@ const makeChart = (expand: string | undefined) => {
         .on("mouseover", function (d) {
             tooltip.html(d.name)
                 .style("opacity", 1)
-                .style("left", `${d3.event.pageX}px`)
-                .style("top", `${d3.event.pageY}px`)
+                .style("left", `${d3.event.pageX + 5}px`)
+                .style("top", `${d3.event.pageY + 5}px`)
         })
         .on("mouseout", function (d) {
             tooltip.style("opacity", 0);
