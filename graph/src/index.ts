@@ -128,7 +128,7 @@ const network = (prev, index: (n: string) => string, expand: string | undefined)
                 gn[i] = n;
                 n.size = 0;
             } else {
-                o = gc[i] || (gc[i] = {x: 0, y: 0, count: 0});
+                o = gc[i] || (gc[i] = {x: width/2, y: height/2, count: 0});
                 o.x += n.x;
                 o.y += n.y;
                 o.count += 1;
@@ -272,20 +272,20 @@ let data: Data, svg, root, net, simulation, simulationInner, linkBands, link, no
     selected, selectedd;
 let height = 6400;
 let width = 6400;
+let relevant = [];
 
 const nodeRadius = d => d.nodes ? Math.log(d.nodes.length) * 3 : (d.id === selected ? 5 : 3)
-const nodeFill = d => d.nodes ? "#000000" : "#673AB7"
+const nodeFill = d => d.nodes ? (relevant.indexOf(d) !== -1 ? "#2E7D32" : "#000000") : "#673AB7"
 
 const search = d3.select("#search").on("input", function () {
     const value = d3.event.target.value;
-    node.attr('fill', nodeFill);
+    node.attr("opacity", 1).attr('fill', nodeFill);
 
     if (value.length === 0) return;
 
-    node.filter(function (d) {
+    node.attr("opacity", 0.5).filter(function (d) {
         return d.id.toLowerCase().includes(value.toLowerCase())
-    }).attr('fill', 'red');
-    console.log(d3.event.target.value);
+    }).attr('fill', '#F44336').attr("opacity", 1);
 })
 
 const init = (initData: Data) => {
@@ -329,6 +329,7 @@ const getBand = (n: string) => n.split('|')[1] || n;
 const getName = (n: string) => n.split('|')[0] || undefined;
 
 const size = (d) => d.group_data?.size || d.size;
+const connectedness = (d) => 1 + (d.group_data?.link_count || d.link_count);
 
 const noise = (value: number, radius: number, rand?: number) => (value - (radius / 2)) + ((rand ?? Math.random()) * radius)
 
@@ -353,10 +354,10 @@ const makeChart = (expand: string | undefined) => {
 
     simulation = d3.forceSimulation(net.nodes)
         .force("link", d3.forceLink(net.links).id(d => d.id).distance(link =>
-            30
+            20 * Math.min(connectedness(link.source), connectedness(link.target))
         ).strength((link) =>
-            1 / Math.min(size(link.source), size(link.target))
-        ))
+            1 / Math.max(connectedness(link.source), connectedness(link.target))
+        ).iterations(3))
         .force("charge", d3.forceManyBody().strength(d => -30)
             .theta(10).distanceMax(2000))
         .force('collision', d3.forceCollide().radius(d => 2 + (d.nodes ? Math.log(d.nodes.length) * 3 : 8)))
@@ -421,29 +422,32 @@ const makeChart = (expand: string | undefined) => {
         .on("click", function (d) {
             console.log("node click", d, arguments, this, expand);
             if (d.nodes) {
+                relevant = [];
+                relevant.push(d);
+                linkBands.filter(l => (l.source === d || l.target === d) && l.source.group !== l.target.group)
+                    .each(l => relevant.push(l.source === d ? l.target : l.source))
                 makeChart(d.group);
             } else {
                 if (selected) {
-                    d3.select(selected).attr("r", nodeRadius);
-                    d3.select(selected).attr("fill", nodeFill);
+                    d3.select(selected).attr("r", nodeRadius).attr("fill", nodeFill);
 
-                    link.each(function (l) {
-                        if ((l.source === selectedd || l.target === selectedd) && l.source.group !== l.target.group) {
-                            d3.select(this).attr('stroke', linkStroke)
-                        }
-                    });
+                    link.attr('stroke', linkStroke).attr("stroke-width", linkWidth);
+                    node.attr('fill', nodeFill);
                 }
 
                 selected = this;
                 selectedd = d;
-                d3.select(this).attr('fill', "#FF9800");
-                d3.select(this).attr('r', 5);
+                d3.select(this).attr('fill', "#FF9800").attr('r', 5);
 
-                link.each(function (l) {
-                    if ((l.source === d || l.target === d) && l.source.group !== l.target.group) {
-                        d3.select(this).attr('stroke', "#FF4081")
-                    }
-                });
+                const connected = [];
+                link.filter(l => (l.source === d || l.target === d) && l.source.group !== l.target.group)
+                    .each(l => connected.push(l.source === d ? l.target : l.source))
+                    .attr('stroke', "#FF4081")
+                    .attr("stroke-width", d => 2 * linkWidth(d));
+
+
+                node.filter(n => connected.indexOf(n) !== -1).attr("fill", "#F50057")
+                    .attr('r', n => 2 * nodeRadius(n));
 
                 const artist = {
                     name: d.name,
